@@ -4,7 +4,7 @@
 
 | 도구 | 하는 일 | 열기 |
 |---|---|---|
-| [배가스 계산기](flue-calc/) | Gas·Air 유량(Nm3/hr) → 예상 배가스 O2(건조), 공기비 | https://song-sullivan.github.io/energy/flue-calc/ |
+| [배가스 계산기](flue-calc/) | 연료(NG·Mixed Gas·COG)와 Gas·Air 유량(Nm3/hr) → 예상 배가스 O2(건조·습윤)와 예상 범위, 공기비 | https://song-sullivan.github.io/energy/flue-calc/ |
 
 ## 폴더 규칙
 - 도구 하나 = 폴더 하나 (`index.html` 하나로 동작, 외부 라이브러리 없음)

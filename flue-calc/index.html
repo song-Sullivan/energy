@@ -9,80 +9,197 @@
 <link rel="icon" href="icon-192.png">
 <style>
   /* 어두운 화면 (현장에서 눈부시지 않게) */
-  :root { color-scheme: dark; --bg: #14181d; --panel: #1d242d; --cell: #232b35; --line: #3d4856; --text: #eef1f5; --sub: #9aa6b4; --ok: #7ee2a8; --warn: #ff8a80; }
+  :root { color-scheme: dark; --bg: #14181d; --panel: #1d242d; --cell: #232b35; --line: #3d4856; --text: #eef1f5; --sub: #9aa6b4; --ok: #7ee2a8; --warn: #ff8a80; --acc: #3a7bd5; }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; font-size: 16px; }
   header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 19px; font-weight: bold; }
   main { padding: 12px 16px 40px; max-width: 520px; margin: 0 auto; }
-  .out { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; text-align: center; min-height: 118px; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; margin: 0; padding: 12px 4px; font-size: 16px; }
+  .seg button.on { background: var(--acc); border-color: var(--acc); font-weight: bold; }
+  .row { display: flex; gap: 8px; align-items: end; margin-top: 10px; }
+  .row > div { flex: 1; }
+  .row button { width: auto; margin: 0; padding: 12px 14px; font-size: 15px; white-space: nowrap; }
+  .out { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-align: center; min-height: 128px; margin-top: 14px; }
   .o2 { font-size: 46px; font-weight: bold; color: var(--ok); line-height: 1.15; }
   .o2 small { font-size: 22px; color: var(--sub); font-weight: normal; }
+  .range { font-size: 19px; margin-top: 2px; }
   .sub { color: var(--sub); font-size: 15px; margin-top: 6px; line-height: 1.5; }
   .warn { color: var(--warn); font-size: 24px; font-weight: bold; line-height: 1.4; }
+  .wn { color: var(--warn); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
   label { display: block; color: var(--sub); font-size: 14px; margin: 0 2px 4px; }
   input { width: 100%; font: inherit; font-size: 28px; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px 10px; }
-  input:focus { outline: 2px solid #3a7bd5; }
+  input.sm { font-size: 20px; padding: 10px; }
+  input:focus { outline: 2px solid var(--acc); }
   button { font: inherit; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; margin-top: 12px; font-size: 17px; }
-  details { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  details { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
   summary { padding: 12px 0; color: var(--sub); cursor: pointer; }
-  details input { font-size: 20px; margin-bottom: 8px; }
   .info { color: var(--sub); font-size: 14px; line-height: 1.6; padding-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 4px 0 10px; }
+  td { border-bottom: 1px solid var(--line); padding: 5px 4px; } td:last-child { text-align: right; }
+  .note { color: var(--sub); font-size: 13px; margin: 10px 2px 0; line-height: 1.5; }
 </style>
 </head>
 <body>
 <header>배가스 계산기</header>
 <main>
-  <div class="out" id="out"></div>
+  <div class="seg" id="fuelSeg"></div>
+  <div class="row">
+    <div><label for="lhv">저위발열량 (kcal/Nm3)</label><input id="lhv" class="sm" inputmode="numeric" autocomplete="off" oninput="onLhv()"></div>
+    <button onclick="resetLhv()">기본값</button>
+  </div>
   <div class="grid">
     <div><label for="gas">Gas (Nm3/hr)</label><input id="gas" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
     <div><label for="air">Air (Nm3/hr)</label><input id="air" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
   </div>
-  <button onclick="clearAll()">지우기</button>
+  <div class="out" id="out"></div>
+  <button onclick="clearFlows()">유량 지우기</button>
+  <div class="note">Gas·Air 모두 온압보정된 Nm3 기준. 운전 화면 유량은 존·Side 합계라서, 결과는 그 구역 버너들의 평균 근처 값이에요.</div>
+
+  <details id="setBox">
+    <summary>설정</summary>
+    <label for="err">예상 범위: 유량 오차 ±% (Air/Gas 비율)</label>
+    <input id="err" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()">
+    <label for="z" style="margin-top:10px">연소용 공기의 O2 농도 (%)</label>
+    <input id="z" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()">
+    <div class="note">보통 21%. 산소부화 설비일 때만 바꿔요.</div>
+    <button onclick="shareSet()">이 설정 공유 (링크)</button>
+    <div class="note" id="shareMsg">연료·발열량·오차·공기 O2를 담은 링크를 만들어요. 받은 사람이 열면 같은 조건이 돼요.</div>
+    <button onclick="resetAll()">설정 전부 기본값으로</button>
+    <div style="height:12px"></div>
+  </details>
+
   <details>
-    <summary>발열량 · 계산 원리</summary>
-    <label for="lhv">연료 저위발열량 (kcal/Nm3)</label>
-    <input id="lhv" inputmode="numeric" autocomplete="off" oninput="calc()">
+    <summary>연료 성분 · 계산 원리</summary>
     <div class="info" id="info"></div>
   </details>
 </main>
 <script>
-// 배가스 계산기 (2026-11-09): 운전 화면의 Gas·Air 유량을 넣으면 예상 배가스 O2를 바로 보여 줌.
-// 기록은 남기지 않음. 앱을 오갈 때 값이 사라지지 않게 마지막 입력과 발열량만 이 폰에 기억
-// 계수(저위발열량 1000 kcal당): KA = 이론공기량 Nm3, KC = 생기는 CO2 Nm3 (건조 기준이라 수증기는 뺌)
-const KA = 1.108, KC = 0.119, LHV0 = 9150, KEY = 'flue-calc-v1';
+// 배가스 계산기 (2026-11-09): 운전 화면의 Gas·Air 유량(온압보정 Nm3)으로 예상 배가스 O2를 "그 근처" 값으로 보여 줌.
+// 기록은 남기지 않음. 연료·발열량·설정과 마지막 입력만 이 폰에 기억 (앱을 오가도 그대로)
+//
+// 계산: 연료 성분으로 이론공기량·배가스량을 구함. 입력한 저위발열량이 성분 기준 열량과 다르면
+// 타는 성분(CH4·H2·CO 등)을 그 비율만큼 늘리거나 줄이고, 안 타는 성분(N2·CO2·O2)은 그대로 둠.
+
+// 성분 1 Nm3당 [필요 O2, 생기는 CO2, 생기는 H2O, 저위, 고위 kcal/Nm3] (0℃·1기압, 이상기체)
+const SP = {
+  CH4:  [2,   1, 2, 8555, 9500],  C2H6: [3.5, 2, 3, 15370, 16820], C3H8: [5, 3, 4, 22260, 24230], C4H10: [6.5, 4, 5, 29570, 32010],
+  C2H4: [3,   2, 2, 14110, 15040], H2:  [0.5, 0, 1, 2575, 3045],    CO:   [0.5, 1, 0, 3017, 3017],
+  CO2:  [0,   1, 0, 0, 0],         N2:  [0,   0, 0, 0, 0],          O2:   [-1, 0, 0, 0, 0]
+};
+const FUELS = {
+  NG:  { name: 'NG', lhv: 9150, comp: { CH4: 90, C2H6: 6, C3H8: 2.5, C4H10: 1, N2: 0.5 }, src: '일반적인 LNG 대표 조성 (가정값)' },
+  MG:  { name: 'Mixed Gas', lhv: 3150, comp: { CO: 14.4, H2: 33.4, N2: 25.3, CO2: 9.8, CH4: 15, C2H4: 1.8, O2: 0.3 }, src: '파트 기준 조성' },
+  COG: { name: 'COG', lhv: 4400, comp: { CO: 7.5, H2: 57, N2: 1.5, CO2: 2.7, CH4: 25.5, C2H4: 3.7, O2: 0.35 }, src: '파트 기준 범위의 가운데 값 (합을 100%로 맞춤)' }
+};
+const ORDER = ['NG', 'MG', 'COG'], KEY = 'flue-calc-v2', DEF = { z: 21, e: 3 };
 const $ = id => document.getElementById(id);
 const num = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/,/g, '').trim()); return isFinite(n) ? n : null; };
+const f1 = x => x.toFixed(1), fmt = x => Math.round(x).toLocaleString();
 
-// Gas·Air 유량 → 공기비 m, 예상 O2(건조 %). 공기 부족(m < 1)이면 o2 = null
-function flueO2(g, a, lhv) {
+// 연료 1 Nm3이 탈 때: 필요 O2, 생기는 CO2·H2O, 안 타고 지나가는 N2 (lhv: 입력한 저위발열량)
+function fuelOf(key, lhv) {
+  const c = FUELS[key].comp, sum = Object.values(c).reduce((s, v) => s + v, 0);
+  let lhvC = 0, hhvC = 0; for (const k in c) { lhvC += c[k] / sum * SP[k][3]; hhvC += c[k] / sum * SP[k][4]; }
+  const f = lhv > 0 ? lhv / lhvC : 1, F = { O2: 0, CO2: 0, H2O: 0, N2: 0, lhvC, hhvC, f };
+  for (const k in c) {
+    const x = c[k] / sum * (SP[k][3] > 0 ? f : 1);   // 타는 성분만 열량 비율로
+    F.O2 += x * SP[k][0]; F.CO2 += x * SP[k][1]; F.H2O += x * SP[k][2]; if (k === 'N2') F.N2 += x;
+  }
+  return F;
+}
+// 공기비 m일 때 O2 (건조·습윤 %). 공기 부족(m < 1)이면 null
+function o2At(F, z, m) {
+  if (m < 1) return null;
+  const A0 = F.O2 / z, ex = (m - 1) * F.O2, vd = F.CO2 + F.N2 + m * A0 * (1 - z) + ex;
+  return { dry: ex / vd * 100, wet: ex / (vd + F.H2O) * 100 };
+}
+// Gas·Air 유량 → 공기비, 이론공기량, O2. zPct: 공기 O2 %
+function flue(g, a, key, lhv, zPct) {
   if (!g || !a || g <= 0 || a <= 0) return null;
-  const k = (lhv || LHV0) / 1000, A0 = KA * k, m = a / (g * A0);   // A0: 연료 1 Nm3당 이론공기량
-  if (m < 1) return { m, A0, o2: null };
-  const ex = (m - 1) * A0, vd = KC * k + 0.79 * A0 + ex;              // ex: 남는 공기, vd: 건조 배가스량
-  return { m, A0, o2: 0.21 * ex / vd * 100 };
+  const F = fuelOf(key, lhv), z = (zPct || 21) / 100, A0 = F.O2 / z, m = a / (g * A0), o = o2At(F, z, m);
+  return { m, A0, F, z, o2: o ? o.dry : null, o2w: o ? o.wet : null };
 }
 
-function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
-function save() { try { localStorage.setItem(KEY, JSON.stringify({ g: $('gas').value, a: $('air').value, lhv: $('lhv').value })); } catch (e) {} }
+// ---- 저장 (설정·마지막 입력만. 기록 아님) ----
+let st = null;
+function load() {
+  let s = {}; try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  if (!s.fuel) { try { const o = JSON.parse(localStorage.getItem('flue-calc-v1')) || {}; s = { g: o.g, a: o.a, lhv: o.lhv ? { NG: o.lhv } : {} }; } catch (e) {} }   // 첫 버전 값 이어받기
+  return { fuel: FUELS[s.fuel] ? s.fuel : 'NG', lhv: Object.assign({}, s.lhv), z: num(s.z) || DEF.z, e: num(s.e) != null ? num(s.e) : DEF.e, g: s.g || '', a: s.a || '' };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+const lhvOf = k => num(st.lhv[k]) || FUELS[k].lhv;
+
+// ---- 화면 ----
+function drawFuel() {
+  $('fuelSeg').innerHTML = ORDER.map(k => '<button class="' + (st.fuel === k ? 'on' : '') + '" onclick="pickFuel(\'' + k + '\')">' + FUELS[k].name + '</button>').join('');
+  $('lhv').value = st.lhv[st.fuel] != null && st.lhv[st.fuel] !== '' ? st.lhv[st.fuel] : FUELS[st.fuel].lhv;
+}
+function pickFuel(k) { st.fuel = k; drawFuel(); calc(); }
+function onLhv() { st.lhv[st.fuel] = $('lhv').value.trim(); calc(); }
+function resetLhv() { delete st.lhv[st.fuel]; drawFuel(); calc(); }
+function onSet() { st.z = num($('z').value) || DEF.z; st.e = num($('err').value) != null ? Math.max(0, num($('err').value)) : DEF.e; calc(); }
+function clearFlows() { $('gas').value = ''; $('air').value = ''; calc(); $('gas').focus(); }
+function resetAll() { st = { fuel: st.fuel, lhv: {}, z: DEF.z, e: DEF.e, g: $('gas').value, a: $('air').value }; init(); }
 
 function calc() {
-  const lhv = num($('lhv').value) || LHV0, r = flueO2(num($('gas').value), num($('air').value), lhv);
+  st.g = $('gas').value; st.a = $('air').value;
+  const lhv = lhvOf(st.fuel), g = num(st.g), r = flue(g, num(st.a), st.fuel, lhv, st.z), e = st.e / 100;
   let h;
-  if (!r) h = '<div class="sub" style="margin-top:30px">Gas·Air 유량을 둘 다 넣으면<br>예상 O2가 나와요</div>';
-  else if (r.o2 == null) h = '<div class="warn">공기 부족</div><div class="sub">공기비 ' + r.m.toFixed(2) + ' · O2 거의 0%, CO 발생 위험<br>Air를 ' + Math.ceil(num($('gas').value) * r.A0).toLocaleString() + ' Nm3/hr 넘게 넣어야 완전연소</div>';
-  else h = '<div class="o2">' + r.o2.toFixed(1) + '<small> %</small></div><div class="sub">예상 O2 (건조) · 공기비 ' + r.m.toFixed(2) + ' · 과잉공기 ' + ((r.m - 1) * 100).toFixed(0) + '%</div>';
+  if (!r) h = '<div class="sub" style="margin-top:34px">Gas·Air 유량을 둘 다 넣으면<br>예상 O2가 나와요</div>';
+  else if (r.o2 == null) h = '<div class="warn">공기 부족</div><div class="sub">공기비 ' + r.m.toFixed(2) + ' · O2 거의 0%, CO 발생 위험<br>Air를 ' + fmt(Math.ceil(g * r.A0)) + ' Nm3/hr 넘게 넣어야 완전연소</div>';
+  else {
+    const lo = o2At(r.F, r.z, r.m * (1 - e)), hi = o2At(r.F, r.z, r.m * (1 + e));
+    const rng = e > 0 ? '<div class="range">예상 범위 ' + (lo ? f1(lo.dry) : '<span class="wn">공기 부족</span>') + ' ~ ' + f1(hi.dry) + '%</div>' : '';
+    h = '<div class="o2">' + f1(r.o2) + '<small> %</small></div>' + rng +
+      '<div class="sub">예상 O2 (건조) · 습윤 기준 ' + f1(r.o2w) + '%<br>공기비 ' + r.m.toFixed(2) + ' · 과잉공기 ' + ((r.m - 1) * 100).toFixed(0) + '%' + (e > 0 ? ' · 오차 ±' + st.e + '%' : '') + '</div>';
+  }
   $('out').innerHTML = h;
-  $('info').innerHTML = '지금 발열량 ' + lhv.toLocaleString() + ' 기준, Gas 1 Nm3를 남김없이 태우는 데 Air ' + (KA * lhv / 1000).toFixed(2) + ' Nm3가 필요해요(이론공기량).<br>' +
-    '실제 Air ÷ 이론 Air = 공기비. 1보다 큰 만큼 공기가 남고, 그 안의 산소가 배가스 O2로 나와요. 그래서 O2는 유량 크기가 아니라 <b>Gas·Air 비율</b>로 정해져요.<br>' +
-    '완전연소를 가정한 계산이에요. 실측이 훨씬 높으면 중간에 공기가 새는(레큐퍼레이터 파공 등) 단서가 될 수 있어요.';
+  drawInfo(lhv);
   save();
 }
-function clearAll() { $('gas').value = ''; $('air').value = ''; calc(); $('gas').focus(); }
+function drawInfo(lhv) {
+  const fu = FUELS[st.fuel], F = fuelOf(st.fuel, lhv), z = st.z / 100, sum = Object.values(fu.comp).reduce((s, v) => s + v, 0);
+  const diff = Math.abs(F.f - 1) * 100;
+  $('info').innerHTML =
+    '<b>' + fu.name + '</b> 성분 (' + fu.src + ')<table>' + Object.keys(fu.comp).map(k => '<tr><td>' + k + '</td><td>' + fu.comp[k] + '%</td></tr>').join('') +
+    (Math.abs(sum - 100) > 0.01 ? '<tr><td>합계</td><td>' + sum.toFixed(2) + '% → 100%로 맞춰 계산</td></tr>' : '') + '</table>' +
+    '성분으로 계산한 열량: 저위 ' + fmt(F.lhvC) + ' / 고위 ' + fmt(F.hhvC) + ' kcal/Nm3<br>' +
+    '입력한 저위발열량 ' + fmt(lhv) + ' → 타는 성분을 ' + (F.f * 100).toFixed(1) + '%로 맞춰 계산' +
+    (diff > 8 ? '<br><span class="wn">입력값이 성분 기준 저위보다 ' + diff.toFixed(0) + '% 달라요. 고위발열량을 넣은 건 아닌지 확인해 주세요.</span>' : '') + '<br><br>' +
+    '지금 조건에서 Gas 1 Nm3를 남김없이 태우려면 Air ' + (F.O2 / z).toFixed(2) + ' Nm3 (이론공기량)가 필요해요.<br>' +
+    '실제 Air ÷ 이론 Air = 공기비. 1보다 큰 만큼 공기가 남고, 그 안의 산소가 배가스 O2로 나와요. 그래서 O2는 유량 크기가 아니라 <b>Gas·Air 비율</b>로 정해져요.<br>' +
+    'Hot Air 온도는 O2에 영향이 없어요. Nm3는 기체 양(분자 수)이라 레큐퍼레이터에서 데워져도 산소 양은 그대로예요.<br>' +
+    '<b>건조</b>: 수분을 빼고 재는 분석계(추출식). <b>습윤</b>: 수분 포함(지르코니아 직접 삽입식).<br>' +
+    '<b>예상 범위</b>: 공기비가 ±' + st.e + '% 흔들릴 때의 O2.<br>' +
+    '완전연소, 공기 습도 무시를 가정한 근사값이에요. 실측이 범위보다 훨씬 높으면 버너별 연료 불균형, 레큐퍼레이터 파공, 노 안 외부 공기 유입 등을 의심해 볼 수 있어요.';
+}
 
-const s = load();
-$('gas').value = s.g || ''; $('air').value = s.a || ''; $('lhv').value = s.lhv || LHV0;
-calc();
+// ---- 설정 공유 링크: #fuel=COG&lhv=4400&z=21&e=3 ----
+function shareSet() {
+  const u = location.origin + location.pathname + '#fuel=' + st.fuel + '&lhv=' + lhvOf(st.fuel) + '&z=' + st.z + '&e=' + st.e;
+  const msg = t => { $('shareMsg').textContent = t; };
+  if (navigator.share) navigator.share({ title: '배가스 계산기 설정', url: u }).catch(() => {});
+  else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => msg('링크를 복사했어요: ' + u), () => msg(u));
+  else msg(u);
+}
+function fromLink() {
+  if (!location.hash.includes('fuel=')) return;
+  const p = new URLSearchParams(location.hash.slice(1)), k = p.get('fuel');
+  if (FUELS[k]) { st.fuel = k; if (num(p.get('lhv'))) st.lhv[k] = p.get('lhv'); }
+  if (num(p.get('z'))) st.z = num(p.get('z'));
+  if (num(p.get('e')) != null) st.e = num(p.get('e'));
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+}
+
+function init() {
+  drawFuel();
+  $('gas').value = st.g; $('air').value = st.a; $('z').value = st.z; $('err').value = st.e;
+  calc();
+}
+st = load(); fromLink(); init();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
