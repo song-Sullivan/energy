@@ -1,6 +1,6 @@
 // 서버가 꺼져 있어도 열리게 파일을 폰 안에 저장해 두는 서비스 워커 (다른 앱과 이름표가 달라 서로 안 섞임)
 // 전략: 서버가 있으면 최신 파일을 받아 저장하고, 없으면 저장해 둔 걸 보여 줌
-const CACHE = 'flue-v3';
+const CACHE = 'flue-v4';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

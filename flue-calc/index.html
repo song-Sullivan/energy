@@ -90,7 +90,7 @@ const SP = {
 };
 const FUELS = {
   NG:  { name: 'NG', lhv: 9150, comp: { CH4: 90, C2H6: 6, C3H8: 2.5, C4H10: 1, N2: 0.5 }, src: '일반적인 LNG 대표 조성 (가정값)' },
-  MG:  { name: 'Mixed Gas', lhv: 3150, comp: { CO: 14.4, H2: 33.4, N2: 25.3, CO2: 9.8, CH4: 15, C2H4: 1.8, O2: 0.3 }, src: '파트 기준 조성' },
+  MG:  { name: 'Mixed Gas', lhv: 2830, comp: { CO: 14.4, H2: 33.4, N2: 25.3, CO2: 9.8, CH4: 15, C2H4: 1.8, O2: 0.3 }, src: '파트 기준 조성. 기본 열량 2830 = 이 성분의 저위 (그동안 쓰던 3150은 이 성분의 고위와 같음)' },
   COG: { name: 'COG', lhv: 4400, comp: { CO: 7.5, H2: 57, N2: 1.5, CO2: 2.7, CH4: 25.5, C2H4: 3.7, O2: 0.35 }, src: '파트 기준 범위의 가운데 값 (합을 100%로 맞춤)' }
 };
 const ORDER = ['NG', 'MG', 'COG'], KEY = 'flue-calc-v2', DEF = { z: 21, e: 3 };

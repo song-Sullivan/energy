@@ -42,21 +42,20 @@ ok('NG 100/1100 → 1.9% (예상 범위·습윤·공기비 같이)', out().inclu
 const rng = out().match(/예상 범위 ([\d.]+) ~ ([\d.]+)/);
 ok('예상 범위가 가운데 값을 감쌈', rng && +rng[1] < 1.857 && +rng[2] > 1.857, out());
 fuelBtn(d, 'Mixed Gas').click();
-ok('Mixed Gas 누르면 기본 3150', $('lhv').value === '3150' && fuelBtn(d, 'Mixed Gas').className === 'on', $('lhv').value);
+ok('Mixed Gas 누르면 기본 2830 (성분 기준 저위, 2026-11-09 3150은 고위로 확인)', $('lhv').value === '2830' && fuelBtn(d, 'Mixed Gas').className === 'on', $('lhv').value);
 type(w, $('gas'), '1000'); type(w, $('air'), '3300');
-ok('Mixed Gas 1000/3300 → 1.1%', out().includes('1.1'), out());
-ok('3150은 성분 기준 저위(2,832)와 11% 차이 → 고위 확인 안내', $('info').textContent.includes('고위발열량을 넣은 건 아닌지'), $('info').textContent.slice(0, 300));
-type(w, $('lhv'), '2832');
-ok('Mixed Gas 2832로 고치면 3.0%, 안내 사라짐', out().includes('3.0') && !$('info').textContent.includes('고위발열량을 넣은 건'), out());
+ok('Mixed Gas 2830 1000/3300 → 3.0%, 안내 없음', out().includes('3.0') && !$('info').textContent.includes('고위발열량을 넣은 건'), out());
+type(w, $('lhv'), '3150');
+ok('고위값 3150을 넣으면 1.1% + 고위 확인 안내', out().includes('1.1') && $('info').textContent.includes('고위발열량을 넣은 건 아닌지'), out());
 fuelBtn(d, 'COG').click();
 ok('COG 4400 기본, 안내 없음(차이 2%)', $('lhv').value === '4400' && !$('info').textContent.includes('고위발열량을 넣은 건'));
 fuelBtn(d, 'Mixed Gas').click();
-ok('연료별 발열량 따로 기억 (Mixed Gas 2832 그대로)', $('lhv').value === '2832', $('lhv').value);
+ok('연료별 발열량 따로 기억 (Mixed Gas 3150 그대로)', $('lhv').value === '3150', $('lhv').value);
 [...d.querySelectorAll('.row button')].find(b => b.textContent === '기본값').click();
-ok('[기본값] → 3150으로', $('lhv').value === '3150');
+ok('[기본값] → 2830으로', $('lhv').value === '2830');
 type(w, $('air'), '2500');
 ok('공기 부족 → 경고 + 필요한 Air', out().includes('공기 부족') && /Air를 [\d,]+ Nm3\/hr/.test(out()), out());
-type(w, $('air'), '3190');   // 공기비 약 1.02: 가운데는 괜찮고 -3%면 부족
+type(w, $('air'), '2865');   // 공기비 약 1.02: 가운데는 괜찮고 -3%면 부족
 ok('범위 아래쪽만 공기 부족이면 범위에 표시', out().includes('예상 범위') && out().includes('공기 부족'), out());
 type(w, $('err'), '0'); type(w, $('air'), '3300');
 ok('오차 0% → 범위 줄 없음', !out().includes('예상 범위'), out());
@@ -67,8 +66,8 @@ const saved = w.localStorage.getItem('flue-calc-v2');
 
 // 3) 다시 열기 (다른 앱 갔다 와서 폰이 앱을 껐어도)
 let B = open({ 'flue-calc-v2': saved });
-ok('다시 열면 연료·발열량·유량·오차 그대로', fuelBtn(B.d, 'Mixed Gas').className === 'on' && B.$('lhv').value === '3150' && B.$('gas').value === '1000' && B.$('air').value === '3300' && B.$('err').value === '5');
-ok('다시 열면 결과 바로 보임', B.out().includes('1.1'), B.out());
+ok('다시 열면 연료·발열량·유량·오차 그대로', fuelBtn(B.d, 'Mixed Gas').className === 'on' && B.$('lhv').value === '2830' && B.$('gas').value === '1000' && B.$('air').value === '3300' && B.$('err').value === '5');
+ok('다시 열면 결과 바로 보임', B.out().includes('3.0'), B.out());
 B = open({ 'flue-calc-v1': JSON.stringify({ g: '100', a: '1100', lhv: '9200' }) });
 ok('첫 버전 값 이어받기 (NG 9200, 유량)', fuelBtn(B.d, 'NG').className === 'on' && B.$('lhv').value === '9200' && B.$('gas').value === '100', [B.$('lhv').value, B.$('gas').value]);
 B = open({ 'flue-calc-v2': '{깨짐' });
