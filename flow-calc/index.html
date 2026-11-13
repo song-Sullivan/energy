@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>온압보정 검산</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1d242d">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { color-scheme: dark; --bg: #14181d; --panel: #1d242d; --cell: #232b35; --line: #3d4856; --text: #eef1f5; --sub: #9aa6b4; --ok: #7ee2a8; --warn: #ff8a80; --mid: #ffd27a; --acc: #3a7bd5; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; font-size: 16px; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 19px; font-weight: bold; }
+  main { padding: 12px 16px 40px; max-width: 520px; margin: 0 auto; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; margin: 0; padding: 12px 4px; font-size: 16px; }
+  .seg.s button { padding: 9px 2px; font-size: 14px; }
+  .seg button.on { background: var(--acc); border-color: var(--acc); font-weight: bold; }
+  .out { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-align: center; min-height: 128px; margin-top: 14px; }
+  .big { font-size: 40px; font-weight: bold; color: var(--ok); line-height: 1.15; }
+  .big small { font-size: 20px; color: var(--sub); font-weight: normal; }
+  .line2 { font-size: 19px; margin-top: 4px; }
+  .sub { color: var(--sub); font-size: 15px; margin-top: 6px; line-height: 1.5; }
+  .warn { color: var(--warn); font-size: 24px; font-weight: bold; line-height: 1.4; }
+  .wn { color: var(--warn); } .md { color: var(--mid); } .gd { color: var(--ok); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; align-items: end; }
+  .hide { display: none; }
+  label { display: block; color: var(--sub); font-size: 14px; margin: 0 2px 4px; }
+  input { width: 100%; font: inherit; font-size: 26px; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px 10px; }
+  input.sm { font-size: 20px; padding: 10px; }
+  input:focus { outline: 2px solid var(--acc); }
+  button { font: inherit; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; margin-top: 12px; font-size: 17px; }
+  details { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  summary { padding: 12px 0; color: var(--sub); cursor: pointer; }
+  .info { color: var(--sub); font-size: 14px; line-height: 1.6; padding-bottom: 12px; }
+  .note { color: var(--sub); font-size: 13px; margin: 10px 2px 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>온압보정 검산</header>
+<main>
+  <div class="seg" id="typeSeg"></div>
+  <div class="grid">
+    <div><label for="q" id="qLbl"></label><input id="q" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+    <div><label for="t">온도 (℃)</label><input id="t" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+  </div>
+  <div class="grid">
+    <div><label for="p" id="pLbl"></label><input id="p" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+    <div><label for="dcs">DCS 보정 유량 (Nm3/hr)</label><input id="dcs" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+  </div>
+  <div class="grid" id="dsgBox">
+    <div><label for="td">설계 온도 (℃)</label><input id="td" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()"></div>
+    <div><label for="pd" id="pdLbl"></label><input id="pd" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()"></div>
+  </div>
+  <div class="out" id="out"></div>
+  <button onclick="clearIn()">값 지우기</button>
+  <div class="note" id="tip"></div>
+
+  <details>
+    <summary>설정</summary>
+    <label>압력 단위 (게이지압)</label>
+    <div class="seg s" id="unitSeg"></div>
+    <label for="patm" style="margin-top:12px">대기압 (kPa)</label>
+    <input id="patm" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()">
+    <div class="note">보통 101.325. 게이지압에 더해 절대압을 만들 때 써요.</div>
+    <button onclick="resetAll()">설정 전부 기본값으로</button>
+    <div style="height:12px"></div>
+  </details>
+
+  <details>
+    <summary>계산 원리</summary>
+    <div class="info" id="info"></div>
+  </details>
+</main>
+<script>
+// 온압보정 검산 (2026-11-13): 보정 전 유량·온도·압력으로 직접 Nm3/hr를 계산해 DCS 보정값과 비교.
+// 체적식(볼텍스·터빈·초음파): 실제 m3를 재므로 Nm3 = m3 × (P/P0) × (T0/T)
+// 차압식(오리피스·벤추리): 설계 밀도로 눈금을 매겨 두므로 Nm3 = 보정 전 × √((P/Pd) × (Td/T))
+// 기록은 남기지 않음. 설정·설계 조건과 마지막 입력만 이 폰에 기억.
+const PU = { kPa: 1, 'kgf/cm²': 98.0665, mmAq: 0.00980665, bar: 100, MPa: 1000 };
+const UNITS = ['kPa', 'kgf/cm²', 'mmAq', 'bar', 'MPa'];
+const T0 = 273.15, P0 = 101.325, KEY = 'flow-calc-v1', DEF = { type: 'vol', unit: 'kPa', patm: 101.325, td: 20, pd: 0 };
+const $ = id => document.getElementById(id);
+const num = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/,/g, '').trim()); return isFinite(n) ? n : null; };
+const fq = x => x.toLocaleString(undefined, { maximumFractionDigits: x < 100 ? 2 : 1 });
+const absP = (pg, unit, patm) => patm + pg * PU[unit];
+
+// 체적식: 보정 전 m3/hr → Nm3/hr. baseT: 기준온도 ℃ (Nm3 = 0℃)
+function vol(q, t, pg, unit, patm, baseT) {
+  const P = absP(pg, unit, patm), T = T0 + t;
+  if (q == null || P <= 0 || T <= 0) return null;
+  const k = (P / P0) * ((T0 + (baseT || 0)) / T);
+  return { q: q * k, k, P, T };
+}
+// 차압식: 설계 조건 기준 보정 전 Nm3/hr → 실제 조건으로 보정한 Nm3/hr
+function dp(q, t, pg, td, pdg, unit, patm) {
+  const P = absP(pg, unit, patm), Pd = absP(pdg, unit, patm), T = T0 + t, Td = T0 + td;
+  if (q == null || P <= 0 || Pd <= 0 || T <= 0 || Td <= 0) return null;
+  const k = Math.sqrt((P / Pd) * (Td / T));
+  return { q: q * k, k, P, Pd, T, Td };
+}
+// DCS 값과 안 맞을 때 흔한 원인들을 각각 계산해 봄 → [이름, 값]
+function guesses(type, q, t, pg, td, pdg, unit, patm) {
+  if (type === 'vol') return [
+    ['기준온도 20℃ (Sm3)', vol(q, t, pg, unit, patm, 20).q],
+    ['기준온도 15℃', vol(q, t, pg, unit, patm, 15).q],
+    ['압력 보정 없음 (온도만)', vol(q, t, 0, unit, P0).q],
+    ['온도 보정 없음 (압력만)', q * absP(pg, unit, patm) / P0],
+    ['압력을 절대압으로 처리', q * (pg * PU[unit] / P0) * (T0 / (T0 + t))]
+  ];
+  const P = absP(pg, unit, patm), Pd = absP(pdg, unit, patm), T = T0 + t, Td = T0 + td;
+  return [
+    ['압력 보정 없음 (온도만)', q * Math.sqrt(Td / T)],
+    ['온도 보정 없음 (압력만)', q * Math.sqrt(P / Pd)],
+    ['√ 없이 선형으로 보정', q * (P / Pd) * (Td / T)],
+    ['보정 전 값 그대로', q]
+  ];
+}
+
+// ---- 저장 ----
+let st = null;
+function load() {
+  let s = {}; try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  const n = (v, d) => num(v) != null ? num(v) : d;
+  return { type: s.type === 'dp' ? 'dp' : 'vol', unit: PU[s.unit] ? s.unit : DEF.unit, patm: n(s.patm, DEF.patm), td: n(s.td, DEF.td), pd: n(s.pd, DEF.pd),
+    q: s.q || '', t: s.t || '', p: s.p || '', dcs: s.dcs || '' };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+
+// ---- 화면 ----
+function draw() {
+  $('typeSeg').innerHTML = [['vol', '체적식'], ['dp', '차압식']].map(([k, t]) => '<button class="' + (st.type === k ? 'on' : '') + '" onclick="pickType(\'' + k + '\')">' + t + '</button>').join('');
+  $('unitSeg').innerHTML = UNITS.map(u => '<button class="' + (st.unit === u ? 'on' : '') + '" onclick="pickUnit(\'' + u + '\')">' + u + '</button>').join('');
+  $('qLbl').textContent = st.type === 'vol' ? '보정 전 유량 (m3/hr)' : '보정 전 유량 (Nm3/hr)';
+  $('pLbl').textContent = '압력 (' + st.unit + ', 게이지)';
+  $('pdLbl').textContent = '설계 압력 (' + st.unit + ', 게이지)';
+  $('dsgBox').className = 'grid' + (st.type === 'dp' ? '' : ' hide');
+  $('tip').textContent = st.type === 'vol'
+    ? '체적식(볼텍스·터빈·초음파): 계량기가 실제 부피 m3를 재요. 보정 전 유량은 DCS의 미보정(실유량) 태그 값을 넣어요.'
+    : '차압식(오리피스·벤추리): 설계 온도·압력에서의 밀도로 눈금을 매긴 값이에요. 설계 조건은 계기 사양서(데이터시트)에서 찾아 한 번 넣어 두면 기억해요.';
+  $('patm').value = st.patm; $('td').value = st.td; $('pd').value = st.pd;
+}
+function pickType(k) { st.type = k; draw(); calc(); }
+function pickUnit(u) { st.unit = u; draw(); calc(); }
+function onSet() { st.patm = num($('patm').value) != null ? num($('patm').value) : DEF.patm; st.td = num($('td').value); st.pd = num($('pd').value); calc(); }
+function clearIn() { ['q', 't', 'p', 'dcs'].forEach(id => { $(id).value = ''; }); calc(); $('q').focus(); }
+function resetAll() { st = Object.assign({}, DEF, { type: st.type, q: $('q').value, t: $('t').value, p: $('p').value, dcs: $('dcs').value }); init(); }
+
+function calc() {
+  ['q', 't', 'p', 'dcs'].forEach(id => { st[id] = $(id).value; });
+  const q = num(st.q), t = num(st.t), p = num(st.p), dcs = num(st.dcs), isDp = st.type === 'dp';
+  let h;
+  if (q == null || t == null || p == null) h = '<div class="sub" style="margin-top:34px">보정 전 유량·온도·압력을 넣으면<br>직접 계산한 Nm3/hr가 나와요</div>';
+  else if (isDp && (st.td == null || st.pd == null)) h = '<div class="sub" style="margin-top:34px">차압식은 설계 온도·압력이 필요해요</div>';
+  else {
+    const r = isDp ? dp(q, t, p, st.td, st.pd, st.unit, st.patm) : vol(q, t, p, st.unit, st.patm, 0);
+    if (!r) h = '<div class="warn">입력 확인</div><div class="sub">절대압과 절대온도가 0보다 커야 해요</div>';
+    else {
+      h = '<div class="big">' + fq(r.q) + '<small> Nm3/hr</small></div>' +
+        '<div class="sub">보정계수 ×' + r.k.toFixed(4) + ' · 절대압 ' + r.P.toFixed(2) + ' kPa · ' + r.T.toFixed(2) + ' K' +
+        (isDp ? '<br>설계 ' + r.Pd.toFixed(2) + ' kPa · ' + r.Td.toFixed(2) + ' K' : '') + '</div>';
+      if (dcs != null && r.q > 0) {
+        const d = (dcs - r.q) / r.q * 100, a = Math.abs(d);
+        const cls = a <= 1 ? 'gd' : a <= 3 ? 'md' : 'wn', say = a <= 1 ? '거의 같음' : a <= 3 ? '조금 차이' : '차이 큼';
+        h += '<div class="line2 ' + cls + '" style="margin-top:10px">DCS ' + fq(dcs) + ' · ' + (d >= 0 ? '+' : '') + d.toFixed(2) + '% · ' + say + '</div>';
+        if (a > 1) {
+          const g = guesses(st.type, q, t, p, st.td, st.pd, st.unit, st.patm).map(([n, v]) => [n, v, Math.abs((dcs - v) / v * 100)]).filter(x => isFinite(x[2])).sort((x, y) => x[2] - y[2])[0];
+          h += g && g[2] <= 1 && g[2] < a
+            ? '<div class="sub">DCS 값은 <b>' + g[0] + '</b>으로 계산한 ' + fq(g[1]) + '와 가까워요 (' + g[2].toFixed(2) + '%). DCS 보정식 설정을 확인해 보세요.</div>'
+            : '<div class="sub">흔한 원인(기준온도, 게이지·절대압, 보정 누락)으로는 설명이 안 돼요. 태그 단위, 설계 조건, 계기 상태를 확인해 보세요.</div>';
+        }
+      }
+    }
+  }
+  $('out').innerHTML = h;
+  drawInfo();
+  save();
+}
+function drawInfo() {
+  $('info').innerHTML =
+    '<b>Nm3</b>: 0℃, 101.325 kPa(1기압)에서의 부피. 기체 양을 온도·압력과 상관없이 비교하려고 써요.<br><br>' +
+    '<b>체적식</b> (볼텍스·터빈·초음파): 계량기는 실제 조건의 부피(m3)를 재요.<br>Nm3 = m3 × (P ÷ 101.325) × (273.15 ÷ T)<br>P: 절대압 kPa = 게이지압 + 대기압, T: 절대온도 K = ℃ + 273.15<br><br>' +
+    '<b>차압식</b> (오리피스·벤추리): 유량이 √(차압 ÷ 밀도)에 비례해서, 설계 밀도로 눈금을 매긴 값을 실제 밀도로 고쳐요.<br>Nm3 = 보정 전 × √((P ÷ P설계) × (T설계 ÷ T))<br>보정 전 유량은 설계 조건 기준 Nm3/hr 눈금 값이에요.<br><br>' +
+    '<b>비교</b>: ±1% 안이면 거의 같음, ±3% 안이면 조금 차이. 1%를 넘으면 흔한 원인(기준온도 20℃·15℃, 압력 또는 온도 보정 누락, 게이지압을 절대압으로 처리, 차압식인데 √ 없이 보정)을 각각 계산해서 DCS 값과 가장 가까운 걸 알려 줘요.<br><br>' +
+    '습도·압축계수는 무시했어요. 저압 연료가스·공기에서는 영향이 작아요.';
+}
+
+function init() {
+  draw();
+  ['q', 't', 'p', 'dcs'].forEach(id => { $(id).value = st[id]; });
+  calc();
+}
+st = load(); init();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

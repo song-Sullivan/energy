@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>NOx·CO 산소 환산</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1d242d">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { color-scheme: dark; --bg: #14181d; --panel: #1d242d; --cell: #232b35; --line: #3d4856; --text: #eef1f5; --sub: #9aa6b4; --ok: #7ee2a8; --warn: #ff8a80; --mid: #ffd27a; --acc: #3a7bd5; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; font-size: 16px; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 19px; font-weight: bold; }
+  main { padding: 12px 16px 40px; max-width: 520px; margin: 0 auto; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; margin: 0; padding: 12px 4px; font-size: 16px; }
+  .seg button.on { background: var(--acc); border-color: var(--acc); font-weight: bold; }
+  .out { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-align: center; min-height: 128px; margin-top: 14px; }
+  .big { font-size: 46px; font-weight: bold; color: var(--ok); line-height: 1.15; }
+  .big small { font-size: 22px; color: var(--sub); font-weight: normal; }
+  .line2 { font-size: 19px; margin-top: 2px; }
+  .sub { color: var(--sub); font-size: 15px; margin-top: 6px; line-height: 1.5; }
+  .warn { color: var(--warn); font-size: 24px; font-weight: bold; line-height: 1.4; }
+  .wn { color: var(--warn); } .md { color: var(--mid); } .gd { color: var(--ok); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; align-items: end; }
+  label { display: block; color: var(--sub); font-size: 14px; margin: 0 2px 4px; }
+  input { width: 100%; font: inherit; font-size: 28px; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px 10px; }
+  input.sm { font-size: 20px; padding: 10px; }
+  input:focus { outline: 2px solid var(--acc); }
+  button { font: inherit; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; margin-top: 12px; font-size: 17px; }
+  details { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  summary { padding: 12px 0; color: var(--sub); cursor: pointer; }
+  .info { color: var(--sub); font-size: 14px; line-height: 1.6; padding-bottom: 12px; }
+  .note { color: var(--sub); font-size: 13px; margin: 10px 2px 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>NOx·CO 산소 환산</header>
+<main>
+  <div class="seg" id="subSeg"></div>
+  <div class="grid">
+    <div><label for="c">측정 농도 (ppm)</label><input id="c" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+    <div><label for="oa">측정 O2 (%)</label><input id="oa" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+  </div>
+  <div class="grid">
+    <div><label for="os">기준 O2 (%)</label><input id="os" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()"></div>
+    <div><label for="lim" id="limLbl">배출 기준 (ppm)</label><input id="lim" class="sm" placeholder="없으면 비움" inputmode="decimal" autocomplete="off" oninput="onSet()"></div>
+  </div>
+  <div class="out" id="out"></div>
+  <button onclick="clearIn()">측정값 지우기</button>
+  <div class="note">농도와 O2는 같은 기준(보통 TMS의 건조 기준)으로 넣어요. 기준 O2와 배출 기준은 시설 허가 조건에 맞춰 한 번 넣어 두면 기억해요.</div>
+
+  <details>
+    <summary>설정</summary>
+    <label>측정 O2가 기준 O2보다 낮을 때</label>
+    <div class="seg" id="lowSeg"></div>
+    <div class="note" id="lowNote"></div>
+    <button onclick="resetAll()">설정 전부 기본값으로</button>
+    <div style="height:12px"></div>
+  </details>
+
+  <details>
+    <summary>계산 원리</summary>
+    <div class="info" id="info"></div>
+  </details>
+</main>
+<script>
+// NOx·CO 산소 환산 (2026-11-13): 측정 농도와 측정 O2 → 기준 O2로 환산한 농도.
+// 공기를 많이 넣어 배가스를 묽히면 측정 농도가 낮아 보이므로, 기준 O2보다 O2가 높으면 (21−기준)/(21−측정)만큼 가중함.
+// 기록은 남기지 않음. 설정과 마지막 입력만 이 폰에 기억.
+const SUB = {
+  NOx: { name: 'NOx', M: 46.01, as: 'NO2로 환산 (분자량 46.01)' },
+  CO:  { name: 'CO',  M: 28.01, as: '분자량 28.01' }
+};
+const ORDER = ['NOx', 'CO'], KEY = 'emis-calc-v1', DEF = { os: 11, low: 'keep' }, VM = 22.414;
+const $ = id => document.getElementById(id);
+const num = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/,/g, '').trim()); return isFinite(n) ? n : null; };
+const f1 = x => x.toFixed(1), f2 = x => x.toFixed(2);
+
+// 기준 O2 환산. low: 'keep' = 측정 O2가 기준보다 낮으면 보정하지 않음(가중만), 'both' = 항상 식대로
+function corr(c, oa, os, low) {
+  if (c == null || oa == null || os == null) return null;
+  if (c < 0 || oa < 0 || os < 0 || oa >= 21 || os >= 21) return { bad: true };
+  const raw = (21 - os) / (21 - oa), keep = oa < os && low === 'keep', k = keep ? 1 : raw;
+  return { c: c * k, k, raw, keep };
+}
+const mg = (ppm, M) => ppm * M / VM;   // ppm → mg/Sm3 (0℃·1기압)
+
+// ---- 저장 ----
+let st = null;
+function load() {
+  let s = {}; try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  return { sub: SUB[s.sub] ? s.sub : 'NOx', os: num(s.os) != null ? num(s.os) : DEF.os, low: s.low === 'both' ? 'both' : 'keep', lim: Object.assign({}, s.lim), c: s.c || '', oa: s.oa || '' };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+
+// ---- 화면 ----
+function drawSeg() {
+  $('subSeg').innerHTML = ORDER.map(k => '<button class="' + (st.sub === k ? 'on' : '') + '" onclick="pickSub(\'' + k + '\')">' + SUB[k].name + '</button>').join('');
+  $('lowSeg').innerHTML = [['keep', '측정값 그대로'], ['both', '식대로 환산']].map(([k, t]) => '<button class="' + (st.low === k ? 'on' : '') + '" onclick="pickLow(\'' + k + '\')">' + t + '</button>').join('');
+  $('lowNote').textContent = st.low === 'keep'
+    ? '과잉공기(측정 O2 > 기준)일 때만 가중해요. O2가 기준보다 낮으면 농도를 깎지 않고 측정값을 그대로 써요.'
+    : 'O2가 기준보다 낮아도 식대로 환산해서 농도가 측정값보다 작아져요.';
+  $('limLbl').textContent = SUB[st.sub].name + ' 배출 기준 (ppm)';
+  $('lim').value = st.lim[st.sub] || '';
+}
+function pickSub(k) { st.sub = k; drawSeg(); calc(); }
+function pickLow(k) { st.low = k; drawSeg(); calc(); }
+function onSet() { st.os = num($('os').value); st.lim[st.sub] = $('lim').value.trim(); calc(); }
+function clearIn() { $('c').value = ''; $('oa').value = ''; calc(); $('c').focus(); }
+function resetAll() { st = { sub: st.sub, os: DEF.os, low: DEF.low, lim: {}, c: $('c').value, oa: $('oa').value }; init(); }
+
+function calc() {
+  st.c = $('c').value; st.oa = $('oa').value;
+  const S = SUB[st.sub], c = num(st.c), oa = num(st.oa), os = st.os, r = corr(c, oa, os, st.low), lim = num(st.lim[st.sub]);
+  let h;
+  if (os == null) h = '<div class="sub" style="margin-top:34px">기준 O2를 넣어 주세요</div>';
+  else if (!r) h = '<div class="sub" style="margin-top:34px">측정 농도와 측정 O2를 넣으면<br>기준 O2 ' + os + '% 환산값이 나와요</div>';
+  else if (r.bad) h = '<div class="warn">입력 확인</div><div class="sub">O2는 0 이상 21% 미만, 농도는 0 이상이어야 해요</div>';
+  else {
+    let why;
+    if (oa > os) why = '과잉공기 → 가중 <b>×' + f2(r.k) + '</b> (측정값보다 커짐)';
+    else if (oa === os) why = '측정 O2 = 기준 O2 → 측정값 그대로';
+    else if (r.keep) why = '측정 O2가 기준보다 낮아 보정 안 함 (측정값 그대로)';
+    else why = '측정 O2가 기준보다 낮아 ×' + f2(r.k) + ' (측정값보다 작아짐)';
+    h = '<div class="big">' + f1(r.c) + '<small> ppm</small></div>' +
+      '<div class="line2">' + Math.round(mg(r.c, S.M)).toLocaleString() + ' mg/Sm3</div>' +
+      '<div class="sub">' + S.name + ' 기준 O2 ' + os + '% 환산<br>' + why + '<br>측정 ' + c + ' ppm × (21−' + os + ')/(21−' + oa + ')' + (r.keep ? ' → 적용 안 함' : '') + '</div>';
+    if (lim > 0) {
+      const p = r.c / lim * 100, cls = p > 100 ? 'wn' : p > 80 ? 'md' : 'gd';
+      h += '<div class="line2 ' + cls + '" style="margin-top:8px">배출 기준 ' + lim + ' ppm의 ' + p.toFixed(0) + '%' + (p > 100 ? ' · 초과' : '') + '</div>' +
+        '<div class="sub">지금 O2 ' + oa + '%에서는 측정값이 ' + f1(lim / r.k) + ' ppm을 넘으면 초과</div>';
+    }
+    if (oa >= 18) h += '<div class="sub wn">O2가 매우 높아 가중이 커요. 외부 공기 유입이나 분석계 상태를 확인해 보세요.</div>';
+  }
+  $('out').innerHTML = h;
+  drawInfo();
+  save();
+}
+function drawInfo() {
+  const S = SUB[st.sub];
+  $('info').innerHTML =
+    '<b>환산식</b>: 환산 농도 = 측정 농도 × (21 − 기준 O2) ÷ (21 − 측정 O2)<br>' +
+    '공기를 더 넣으면 오염물질 양은 그대로인데 배가스가 늘어나 농도가 묽어져요. 그래서 측정 O2가 기준보다 높으면 그만큼 <b>가중</b>해서 공기로 희석한 효과를 없애요. ' +
+    '예) 기준 11%, 측정 15% → ×(10 ÷ 6) = ×1.67<br><br>' +
+    '<b>측정 O2가 기준보다 낮을 때</b>: 식대로 하면 농도가 작아지는데, 이 경우 보정하지 않고 측정값을 그대로 쓰는 규정·사업장이 많아요. 설정에서 고를 수 있어요 (지금: ' + (st.low === 'keep' ? '측정값 그대로' : '식대로 환산') + ').<br><br>' +
+    '<b>mg/Sm3</b> = ppm × 분자량 ÷ 22.414 (0℃·1기압). ' + S.name + ': ' + S.as + '.<br>' +
+    '<b>농도와 O2는 같은 기준</b>으로 넣어야 해요. TMS는 보통 건조 기준이에요. 습윤 O2(지르코니아 직접 삽입식)를 건조 농도와 섞어 쓰면 환산값이 틀어져요.<br>' +
+    '<b>배출 기준</b>을 넣으면 기준 대비 몇 %인지, 지금 O2에서 측정값이 얼마를 넘으면 초과인지도 보여 줘요.';
+}
+
+function init() {
+  drawSeg();
+  $('c').value = st.c; $('oa').value = st.oa; $('os').value = st.os != null ? st.os : '';
+  calc();
+}
+st = load(); init();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

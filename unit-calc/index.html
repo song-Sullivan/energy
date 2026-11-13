@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>연료 원단위</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1d242d">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { color-scheme: dark; --bg: #14181d; --panel: #1d242d; --cell: #232b35; --line: #3d4856; --text: #eef1f5; --sub: #9aa6b4; --ok: #7ee2a8; --warn: #ff8a80; --mid: #ffd27a; --acc: #3a7bd5; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; font-size: 16px; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 19px; font-weight: bold; }
+  main { padding: 12px 16px 40px; max-width: 520px; margin: 0 auto; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; margin: 0; padding: 12px 4px; font-size: 16px; }
+  .seg button.on { background: var(--acc); border-color: var(--acc); font-weight: bold; }
+  .out { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-align: center; min-height: 128px; margin-top: 14px; }
+  .big { font-size: 46px; font-weight: bold; color: var(--ok); line-height: 1.15; }
+  .big small { font-size: 22px; color: var(--sub); font-weight: normal; }
+  .line2 { font-size: 19px; margin-top: 2px; }
+  .sub { color: var(--sub); font-size: 15px; margin-top: 6px; line-height: 1.5; }
+  .wn { color: var(--warn); } .gd { color: var(--ok); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; align-items: end; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px; align-items: end; }
+  label { display: block; color: var(--sub); font-size: 14px; margin: 0 2px 4px; }
+  input { width: 100%; font: inherit; font-size: 24px; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; }
+  input.sm { font-size: 20px; padding: 10px; }
+  input:focus { outline: 2px solid var(--acc); }
+  button { font: inherit; color: var(--text); background: var(--cell); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; margin-top: 12px; font-size: 17px; }
+  details { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  summary { padding: 12px 0; color: var(--sub); cursor: pointer; }
+  .info { color: var(--sub); font-size: 14px; line-height: 1.6; padding-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 0; color: var(--sub); }
+  td { border-bottom: 1px solid var(--line); padding: 5px 4px; text-align: right; } td:first-child { text-align: left; }
+  .note { color: var(--sub); font-size: 13px; margin: 10px 2px 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>연료 원단위</header>
+<main>
+  <div class="seg" id="modeSeg"></div>
+  <div class="grid3" id="flows"></div>
+  <div class="grid">
+    <div><label for="prod" id="prodLbl"></label><input id="prod" inputmode="decimal" autocomplete="off" oninput="calc()"></div>
+    <div><label for="goal">목표 원단위 (Mcal/t)</label><input id="goal" class="sm" inputmode="decimal" autocomplete="off" oninput="onSet()"></div>
+  </div>
+  <div class="out" id="out"></div>
+  <button onclick="clearIn()">유량·생산량 지우기</button>
+  <div class="note">유량은 온압보정된 Nm3. 안 쓰는 연료는 비워 둬요. 목표는 없으면 비워 둬요.</div>
+
+  <details>
+    <summary>설정 · 발열량</summary>
+    <div class="grid3" id="lhvs"></div>
+    <div class="note">기본은 배가스 계산기와 같은 저위발열량이에요. 회사 원단위를 고위 기준으로 관리하면 고위값을 넣어요.</div>
+    <button onclick="resetAll()">설정 전부 기본값으로</button>
+    <div style="height:12px"></div>
+  </details>
+
+  <details>
+    <summary>계산 원리</summary>
+    <div class="info" id="info"></div>
+  </details>
+</main>
+<script>
+// 연료 원단위 (2026-11-13): 연료별 유량 × 발열량 합 ÷ 생산량 → Mcal/t, GJ/t.
+// 시간당(Nm3/hr, t/hr)과 누계(Nm3, t)는 계산이 같고 단위 이름만 다름.
+// 기록은 남기지 않음. 발열량·목표와 마지막 입력만 이 폰에 기억.
+const FUELS = { NG: { name: 'NG', lhv: 9150 }, MG: { name: 'Mixed Gas', lhv: 2830 }, COG: { name: 'COG', lhv: 4400 } };
+const ORDER = ['NG', 'MG', 'COG'], KEY = 'unit-calc-v1', MJ = 4.1868;   // 1 Mcal = 4.1868 MJ
+const $ = id => document.getElementById(id);
+const num = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/,/g, '').trim()); return isFinite(n) ? n : null; };
+const fmt = x => Math.round(x).toLocaleString(), f1 = x => x.toFixed(1);
+
+// rows: { NG: [유량, 발열량 kcal/Nm3], ... } → 연료별 열량(Mcal), 합계, 원단위
+function unit(rows, prod) {
+  const part = {}; let heat = 0;
+  for (const k in rows) { const [q, l] = rows[k]; const h = q > 0 && l > 0 ? q * l / 1000 : 0; part[k] = h; heat += h; }
+  if (!(prod > 0) || !(heat > 0)) return null;
+  const mcal = heat / prod;
+  return { heat, part, mcal, gj: mcal * MJ / 1000 };
+}
+
+// ---- 저장 ----
+let st = null;
+function load() {
+  let s = {}; try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+  return { mode: s.mode === 'sum' ? 'sum' : 'hr', lhv: Object.assign({}, s.lhv), goal: s.goal || '', q: Object.assign({}, s.q), prod: s.prod || '' };
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+const lhvOf = k => num(st.lhv[k]) || FUELS[k].lhv;
+
+// ---- 화면 ----
+function draw() {
+  const hr = st.mode === 'hr';
+  $('modeSeg').innerHTML = [['hr', '시간당'], ['sum', '누계 (일·월)']].map(([k, t]) => '<button class="' + (st.mode === k ? 'on' : '') + '" onclick="pickMode(\'' + k + '\')">' + t + '</button>').join('');
+  $('flows').innerHTML = ORDER.map(k => '<div><label for="q' + k + '">' + FUELS[k].name + ' (' + (hr ? 'Nm3/hr' : 'Nm3') + ')</label><input id="q' + k + '" inputmode="decimal" autocomplete="off" oninput="calc()"></div>').join('');
+  $('lhvs').innerHTML = ORDER.map(k => '<div><label for="l' + k + '">' + FUELS[k].name + ' kcal/Nm3</label><input id="l' + k + '" class="sm" inputmode="numeric" autocomplete="off" placeholder="' + FUELS[k].lhv + '" oninput="onSet()"></div>').join('');
+  $('prodLbl').textContent = hr ? '생산량 (t/hr)' : '생산량 (t)';
+  ORDER.forEach(k => { $('q' + k).value = st.q[k] || ''; $('l' + k).value = st.lhv[k] || FUELS[k].lhv; });
+  $('prod').value = st.prod; $('goal').value = st.goal;
+}
+function pickMode(k) { st.mode = k; draw(); calc(); }
+function onSet() { ORDER.forEach(k => { st.lhv[k] = $('l' + k).value.trim(); }); st.goal = $('goal').value.trim(); calc(); }
+function clearIn() { ORDER.forEach(k => { $('q' + k).value = ''; }); $('prod').value = ''; calc(); $('q' + ORDER[0]).focus(); }
+function resetAll() { st = { mode: st.mode, lhv: {}, goal: '', q: st.q, prod: st.prod }; draw(); calc(); }
+
+function calc() {
+  ORDER.forEach(k => { st.q[k] = $('q' + k).value; }); st.prod = $('prod').value;
+  const hr = st.mode === 'hr', rows = {}; ORDER.forEach(k => { rows[k] = [num(st.q[k]), lhvOf(k)]; });
+  const prod = num(st.prod), r = unit(rows, prod), goal = num(st.goal);
+  let h;
+  if (!r) h = '<div class="sub" style="margin-top:34px">연료 유량(하나 이상)과 생산량을 넣으면<br>원단위가 나와요</div>';
+  else {
+    h = '<div class="big">' + fmt(r.mcal) + '<small> Mcal/t</small></div>' +
+      '<div class="line2">' + r.gj.toFixed(3) + ' GJ/t</div>' +
+      '<div class="sub">총 열량 ' + (r.heat / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 }) + (hr ? ' Gcal/hr' : ' Gcal') + ' · 생산량 ' + prod.toLocaleString() + (hr ? ' t/hr' : ' t') + '</div>';
+    if (goal > 0) {
+      const d = r.mcal - goal, p = d / goal * 100, extra = d * prod / 1000;   // Gcal
+      h += '<div class="line2 ' + (d > 0 ? 'wn' : 'gd') + '" style="margin-top:8px">목표 ' + fmt(goal) + ' 대비 ' + (d >= 0 ? '+' : '') + fmt(d) + ' (' + (p >= 0 ? '+' : '') + f1(p) + '%)</div>' +
+        '<div class="sub">' + (d > 0 ? '목표보다 ' : '목표보다 덜 써서 ') + Math.abs(extra).toLocaleString(undefined, { maximumFractionDigits: 2 }) + (hr ? ' Gcal/hr' : ' Gcal') +
+        ' · NG로 치면 ' + fmt(Math.abs(extra) * 1e6 / lhvOf('NG')) + (hr ? ' Nm3/hr' : ' Nm3') + (d > 0 ? ' 더 씀' : ' 아낌') + '</div>';
+    }
+    h += '<table>' + ORDER.filter(k => r.part[k] > 0).map(k => '<tr><td>' + FUELS[k].name + '</td><td>' + fmt(r.part[k] / prod) + ' Mcal/t</td><td>' + f1(r.part[k] / r.heat * 100) + '%</td></tr>').join('') + '</table>';
+  }
+  $('out').innerHTML = h;
+  drawInfo();
+  save();
+}
+function drawInfo() {
+  $('info').innerHTML =
+    '<b>원단위</b> = Σ(연료 유량 × 발열량) ÷ 생산량<br>' +
+    'Nm3 × kcal/Nm3 = kcal → ÷1000 = Mcal. 생산량 1 t을 만드는 데 든 열량이에요.<br>' +
+    '<b>GJ/t</b> = Mcal/t × 4.1868 ÷ 1000 (1 kcal = 4.1868 kJ)<br><br>' +
+    '<b>시간당</b>: DCS의 현재 유량(Nm3/hr)과 생산 속도(t/hr). 순간값이라 흔들릴 수 있어요.<br>' +
+    '<b>누계</b>: 하루·한 달 적산 유량(Nm3)과 생산량(t). 계산은 같고 단위만 달라요. 실적 원단위를 볼 때 써요.<br><br>' +
+    '<b>발열량</b> (지금: ' + ORDER.map(k => FUELS[k].name + ' ' + fmt(lhvOf(k))).join(', ') + ' kcal/Nm3): 원단위는 어떤 발열량 기준이냐에 따라 숫자가 달라져요. 회사 기준(저위·고위)과 맞춰 주세요.<br>' +
+    '<b>목표 비교</b>: 목표와의 차이를 열량(Gcal)과 NG 유량으로 바꿔서 보여 줘요.';
+}
+
+function init() { draw(); calc(); }
+st = load(); init();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
